@@ -1,0 +1,31 @@
+{
+    "compilerOptions": {
+        "module": "commonjs",
+        "moduleResolution": "node",
+        "target": "es2019",
+        "lib": ["es6", "es2018", "dom", "dom.iterable"],
+        "declaration": true,
+        "noImplicitReturns": true,
+        "noFallthroughCasesInSwitch": true,
+        "noUnusedLocals": false,
+        "allowUnreachableCode": false,
+        "strict": true,
+        "outDir": "lib",
+        "baseUrl": ".",
+        "paths": {
+            "*": ["typings/*", "node_modules/*"]
+        },
+        "typeRoots": ["./node_modules/@types", "./typings"],
+        "pretty": true,
+        "incremental": false
+    },
+    "include": [
+        "./**/*.ts"
+    ],
+    "exclude": [
+        "node_modules",
+        "lib",
+        "test",
+    ],
+    "compileOnSave": false
+}
