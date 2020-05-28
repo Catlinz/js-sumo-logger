@@ -2,22 +2,11 @@ const DEFAULT_INTERVAL = 0;
 const DEFAULT_BATCH = 0;
 const NOOP = () => {};
 
-function getUUID(): string {
-    // eslint gets funny about bitwise
-    /* eslint-disable */
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-        const piece = (Math.random() * 16) | 0;
-        const elem = c === 'x' ? piece : (piece & 0x3) | 0x8;
-        return elem.toString(16);
-    });
-    /* eslint-enable */
-}
-
 class SumoLogger {
-    private config: SumoLoggerConfig = {} as SumoLoggerConfig;
-    private interval: number|NodeJS.Timer = 0;
-    private logSending = false;
-    private pendingLogs: (string|object)[] = [];
+    private _config: SumoLoggerConfig = {} as SumoLoggerConfig;
+    private _interval: number|NodeJS.Timer = 0;
+    private _logSending = false;
+    private _pendingLogs: (string|object)[] = [];
 
     constructor(options: SumoLoggerOptions) {
         if (!options || !options.endpoint || !isString(options.endpoint)) {
@@ -30,7 +19,7 @@ class SumoLogger {
     }
 
     setConfig(newConfig: SumoLoggerOptions) {
-        this.config = {
+        this._config = {
             endpoint: newConfig.endpoint,
             returnPromise: isDefinedNotNull(newConfig.returnPromise) ? newConfig.returnPromise : true,
             clientUrl: newConfig.clientUrl || STR_EMPTY,
@@ -49,28 +38,28 @@ class SumoLogger {
     }
 
     updateConfig(newConfig: Partial<SumoLoggerOptions> = {}) {
-        if (newConfig.batchSize) { this.config.batchSize = newConfig.batchSize; }
-        if (newConfig.endpoint) { this.config.endpoint = newConfig.endpoint; }
-        if (newConfig.returnPromise) { this.config.returnPromise = newConfig.returnPromise; }
-        if (newConfig.sourceCategory) { this.config.sourceCategory = newConfig.sourceCategory; }
-        if (newConfig.useIntervalOnly) { this.config.useIntervalOnly = newConfig.useIntervalOnly; }
+        if (newConfig.batchSize) { this._config.batchSize = newConfig.batchSize; }
+        if (newConfig.endpoint) { this._config.endpoint = newConfig.endpoint; }
+        if (newConfig.returnPromise) { this._config.returnPromise = newConfig.returnPromise; }
+        if (newConfig.sourceCategory) { this._config.sourceCategory = newConfig.sourceCategory; }
+        if (newConfig.useIntervalOnly) { this._config.useIntervalOnly = newConfig.useIntervalOnly; }
         
         if (newConfig.interval) {
-            this.config.interval = newConfig.interval;
+            this._config.interval = newConfig.interval;
             this.startLogSending();
         }
     }
 
     batchReadyToSend() {
-        if (this.config.batchSize === 0) {
-            return this.config.interval === 0;
+        if (this._config.batchSize === 0) {
+            return this._config.interval === 0;
         } else {
-            const pendingMessages = this.pendingLogs.reduce((acc: string, curr) => {
+            const pendingMessages = this._pendingLogs.reduce((acc: string, curr) => {
                 const log = isString(curr) ? JSON.parse(curr) : curr;
                 return acc + log.msg + STR_NEWLINE;
             }, STR_EMPTY) as string;
             
-            const ready = pendingMessages.length >= this.config.batchSize;
+            const ready = pendingMessages.length >= this._config.batchSize;
             if (ready) { this.stopLogSending(); }
 
             return ready;
@@ -78,69 +67,69 @@ class SumoLogger {
     }
 
     _postSuccess(logsSentLength: number) {
-        this.pendingLogs = this.pendingLogs.slice(logsSentLength);
-        this.logSending = false;
+        this._pendingLogs = this._pendingLogs.slice(logsSentLength);
+        this._logSending = false;
         // Reset interval if needed:
         this.startLogSending();
-        this.config.onSuccess();
+        this._config.onSuccess();
     }
 
     async sendLogs(): Promise<Response|false> {
-        if (this.logSending || this.pendingLogs.length === 0) { return false; }
+        if (this._logSending || this._pendingLogs.length === 0) { return false; }
 
         try {
-            this.logSending = true;
+            this._logSending = true;
             const headers: {[header: string]: string} = { 
                 'X-Sumo-Client': 'sumo-javascript-sdk',
-                'Content-Type': this.config.graphite ? 'application/vnd.sumologic.graphite' : 'application/json',
+                'Content-Type': this._config.graphite ? 'application/vnd.sumologic.graphite' : 'application/json',
             };
 
-            if (this.config.sourceName) {
-                headers['X-Sumo-Name'] = this.config.sourceName;
+            if (this._config.sourceName) {
+                headers['X-Sumo-Name'] = this._config.sourceName;
             }
-            if (this.config.sourceCategory) {
-                headers['X-Sumo-Category'] = this.config.sourceCategory;
+            if (this._config.sourceCategory) {
+                headers['X-Sumo-Category'] = this._config.sourceCategory;
             }
-            if (this.config.hostName) {
-                headers['X-Sumo-Host'] = this.config.hostName;
+            if (this._config.hostName) {
+                headers['X-Sumo-Host'] = this._config.hostName;
             }
 
-            const logsToSend = this.pendingLogs.length === 1 ? this.pendingLogs : this.pendingLogs.slice();
+            const logsToSend = this._pendingLogs.length === 1 ? this._pendingLogs : this._pendingLogs.slice();
             const numberOfLogs = logsToSend.length;
 
             const response = await makeRequest({
-                url: this.config.endpoint,
+                url: this._config.endpoint,
                 headers, 
-                body: this.pendingLogs.join(STR_NEWLINE)
+                body: this._pendingLogs.join(STR_NEWLINE)
             });
 
             this._postSuccess(numberOfLogs);
             return response;
 
         } catch (error) {
-            this.config.onError(error as Error);
+            this._config.onError(error as Error);
             return false;
         }
         finally {
-            this.logSending = false;
+            this._logSending = false;
         }
     }
 
     startLogSending() {
-        if (this.config.interval > 0) {
-            if (this.interval) { this.stopLogSending(); }
+        if (this._config.interval > 0) {
+            if (this._interval) { this.stopLogSending(); }
 
-            this.interval = setInterval(() => this.sendLogs(), this.config.interval);
+            this._interval = setInterval(() => this.sendLogs(), this._config.interval);
         }
     }
 
     stopLogSending() {
-        clearInterval(this.interval as NodeJS.Timer);
-        this.interval = 0;
+        clearInterval(this._interval as NodeJS.Timer);
+        this._interval = 0;
     }
 
     emptyLogQueue() {
-        this.pendingLogs = [];
+        this._pendingLogs = [];
     }
 
     flushLogs() {
@@ -158,12 +147,12 @@ class SumoLogger {
 
         const testEl = Array.isArray(message) ? message[0] : message;
 
-        if (typeof testEl === TYPE_UNDEFINED) {
+        if (!isDefined(testEl)) {
             console.error('A value must be provided');
             return false;
         }
 
-        if (this.config.graphite && (!testEl || !isDefinedNotNull((testEl as GraphiteMessage).path) || !isDefinedNotNull((testEl as GraphiteMessage).value))) {
+        if (this._config.graphite && (!testEl || !isDefinedNotNull((testEl as GraphiteMessage).path) || !isDefinedNotNull((testEl as GraphiteMessage).value))) {
             console.error('Both "path" and "value" properties must be provided in the message object to send Graphite metrics');
             return false;
         }
@@ -180,16 +169,16 @@ class SumoLogger {
         }
 
         let ts = optionalConfig?.timestamp || new Date();
-        let sessKey = optionalConfig?.sessionKey || this.config.sessionKey;
-        const client = { url: optionalConfig?.url || this.config.clientUrl };
+        let sessKey = optionalConfig?.sessionKey || this._config.sessionKey;
+        const client = { url: optionalConfig?.url || this._config.clientUrl };
 
         const timestamp = ts.toJSON();
 
         const messages = (message as T[]).map((item: T|GraphiteMessage|string): string|T => {
-            if (this.config.graphite) {
+            if (this._config.graphite) {
                 return toString((item as GraphiteMessage).path) + STR_SPACE + toString((item as GraphiteMessage).value) + STR_SPACE + Math.round(ts.getTime() / 1000).toString(10);
             }
-            if (this.config.raw) {
+            if (this._config.raw) {
                 return item as T;
             }
             if (isString(item)) {
@@ -208,9 +197,9 @@ class SumoLogger {
             return JSON.stringify(Object.assign({ sessionId: sessKey, timestamp }, client, item));
         });
 
-        this.pendingLogs = this.pendingLogs.concat(messages);
+        this._pendingLogs = this._pendingLogs.concat(messages);
 
-        if (!this.config.useIntervalOnly && this.batchReadyToSend()) {
+        if (!this._config.useIntervalOnly && this.batchReadyToSend()) {
             return this.sendLogs();
         }
 
@@ -222,6 +211,18 @@ class SumoLogger {
 //#region Utility Functions and Constants
 /*************************************************************/
 
+function getUUID(): string {
+    // eslint gets funny about bitwise
+    /* eslint-disable */
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+        const piece = (Math.random() * 16) | 0;
+        const elem = c === 'x' ? piece : (piece & 0x3) | 0x8;
+        return elem.toString(16);
+    });
+    /* eslint-enable */
+}
+
+function isDefined<T>(value: T|undefined): value is Exclude<T, undefined> { return typeof value !== TYPE_UNDEFINED; }
 function isDefinedNotNull<T>(value: T|undefined): value is Exclude<T, null|undefined> { return (typeof value !== TYPE_UNDEFINED) && value !== null; }
 function isFunction<T extends AnyFunction = AnyFunction>(value: any): value is T { return typeof value === TYPE_FUNCTION; }
 function isObject<T extends object = object>(value: any): value is T { return typeof value === TYPE_OBJECT; }
